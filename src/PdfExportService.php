@@ -163,9 +163,10 @@ class PdfExportService
                 : new ExportException('forbidden');
         }
 
-        $writer->startDocument($this->collector->getTitle());
-        // initial context for placeholder replacements, before any pages are loaded
+        // Set the initial context (first page) before the document is started, so the headers and
+        // footers defined in startDocument() resolve their placeholders against the first page.
         $template->setContext($this->collector, $pages[0], null);
+        $writer->startDocument($this->collector->getTitle());
         $writer->cover();
 
         if ($this->config->hasToC()) {
