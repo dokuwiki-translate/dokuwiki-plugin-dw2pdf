@@ -14,35 +14,6 @@ use DokuWikiTest;
  */
 class HeadingResolverTest extends DokuWikiTest {
 
-    public function testBookmarkLevels() {
-        $resolver = new HeadingResolver(new Config());
-
-        $levels = [
-            1,2,2,2,3,4,5,6,5,4,3,2,1, // index:0-12
-            3,4,3,1,                   // 13-16
-            2,3,4,2,3,4,1,             // 17-23
-            3,4,3,2,1,                 // 24-28
-            3,4,2,1,                   // 29-32
-            3,5,6,5,6,4,6,3,1,         // 33-41
-            3,6,4,5,6,4,3,6,2,1,       // 42-51
-            2,3,2,3,3                  // 52-56
-        ];
-        $expectedbookmarklevels = [
-            0,1,1,1,2,3,4,5,4,3,2,1,0,
-            1,2,1,0,
-            1,2,3,1,2,3,0,
-            1,2,1,1,0,
-            1,2,1,0,
-            1,2,3,2,3,2,3,2,0,
-            1,2,2,3,4,2,2,3,1,0,
-            1,2,1,2,2
-        ];
-        foreach ($levels as $i => $level) {
-            $actualbookmarklevel = $this->callInaccessibleMethod($resolver, 'calculateBookmarklevel', [$level]);
-            $this->assertEquals($expectedbookmarklevels[$i], $actualbookmarklevel, "index:$i, lvl:$level");
-        }
-    }
-
     /**
      * The heading text has to survive being marked and resolved again
      */
@@ -81,6 +52,40 @@ class HeadingResolverTest extends DokuWikiTest {
             HeadingResolver::marker('One', 1) . HeadingResolver::marker('Sub', 2)
         ));
         $this->assertSame('2. ', $resolver->resolvePage(HeadingResolver::marker('Two', 1)));
+    }
+
+    /**
+     * Skipped heading levels do not produce gaps in the numbering
+     */
+    public function testNumberingOfSkippedLevels() {
+        $resolver = new HeadingResolver(new Config(['headernumber' => 1, 'maxbookmarks' => 0]));
+
+        $this->assertSame('1. 1.1. 1.2. 1.2.1. ', $resolver->resolvePage(
+            HeadingResolver::marker('Top', 1) .
+            HeadingResolver::marker('Deep A', 4) .
+            HeadingResolver::marker('Less Deep', 3) .
+            HeadingResolver::marker('Deep B', 4)
+        ));
+    }
+
+    /**
+     * Numbering and bookmark nesting agree, even though bookmarks skip deeper headings
+     */
+    public function testNumberingAndBookmarksAgree() {
+        $resolver = new HeadingResolver(new Config(['headernumber' => 1, 'maxbookmarks' => 3]));
+
+        $resolved = $resolver->resolvePage(
+            HeadingResolver::marker('Top', 1) .
+            HeadingResolver::marker('Deep', 4) .
+            HeadingResolver::marker('Less Deep', 3)
+        );
+
+        $this->assertSame(
+            '<bookmark content="1.  Top" level="0" />1. ' .
+            '1.1. ' .
+            '<bookmark content="1.2.  Less Deep" level="1" />1.2. ',
+            $resolved
+        );
     }
 
     /**

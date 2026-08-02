@@ -20,20 +20,17 @@ class HeadingResolver
     /** @var Config The configuration */
     protected Config $config;
 
-    /** @var int[] The current counter for each heading level */
+    /** @var DepthNormalizer The depths of all headings, driving the numbering */
+    protected DepthNormalizer $numberDepths;
+
+    /** @var DepthNormalizer The depths of the bookmarked headings only */
+    protected DepthNormalizer $bookmarkDepths;
+
+    /** @var int[] The current counter for each depth */
     protected array $headerCount = [];
 
-    /** @var int The level of the heading resolved before this one */
-    protected int $previousLevel = 0;
-
-    /** @var int The level of the last heading passed to calculateBookmarklevel() */
-    protected int $lastHeaderLevel = -1;
-
-    /** @var int The bookmark level a skipped-level sequence started from */
-    protected int $originalHeaderLevel = 0;
-
-    /** @var int How much the bookmark levels are currently shifted up */
-    protected int $difference = 0;
+    /** @var int The depth of the heading numbered before this one */
+    protected int $previousDepth = 0;
 
     /**
      * @param Config $config The configuration of the current export
@@ -41,6 +38,8 @@ class HeadingResolver
     public function __construct(Config $config)
     {
         $this->config = $config;
+        $this->numberDepths = new DepthNormalizer();
+        $this->bookmarkDepths = new DepthNormalizer();
     }
 
     /**
@@ -91,7 +90,7 @@ class HeadingResolver
                 '<bookmark content="%s %s" level="%d" />',
                 $headerPrefix,
                 hsc($text),
-                $this->calculateBookmarklevel($level)
+                $this->bookmarkDepths->normalize($level) - 1 // bookmark levels are zero indexed
             );
         }
 
@@ -110,51 +109,22 @@ class HeadingResolver
     {
         if (!$this->config->useNumberedHeaders()) return '';
 
+        $depth = $this->numberDepths->normalize($level);
+
         // a heading closes all deeper levels
-        if ($this->previousLevel > $level) {
-            for ($i = $level + 1; $i <= $this->previousLevel; $i++) {
+        if ($this->previousDepth > $depth) {
+            for ($i = $depth + 1; $i <= $this->previousDepth; $i++) {
                 $this->headerCount[$i] = 0;
             }
         }
-        $this->headerCount[$level] = ($this->headerCount[$level] ?? 0) + 1;
+        $this->headerCount[$depth] = ($this->headerCount[$depth] ?? 0) + 1;
 
         $prefix = '';
-        for ($i = 1; $i <= $level; $i++) {
+        for ($i = 1; $i <= $depth; $i++) {
             $prefix .= ($this->headerCount[$i] ?? 0) . '.';
         }
 
-        $this->previousLevel = $level;
+        $this->previousDepth = $depth;
         return $prefix . ' ';
-    }
-
-    /**
-     * Bookmark levels might increase maximal +1 per level.
-     * (note: levels start at 1, bookmarklevels at 0)
-     *
-     * @param int $level 1 (highest) to 6 (lowest)
-     * @return int
-     */
-    protected function calculateBookmarklevel($level)
-    {
-        if ($this->lastHeaderLevel == -1) {
-            $this->lastHeaderLevel = $level;
-        }
-        $step = $level - $this->lastHeaderLevel;
-        if ($step > 1) {
-            $this->difference += $step - 1;
-        }
-        if ($step < 0) {
-            $this->difference = min($this->difference, $level - $this->originalHeaderLevel);
-            $this->difference = max($this->difference, 0);
-        }
-
-        $bookmarklevel = $level - $this->difference;
-
-        if ($step > 1) {
-            $this->originalHeaderLevel = $bookmarklevel;
-        }
-
-        $this->lastHeaderLevel = $level;
-        return $bookmarklevel - 1; //zero indexed
     }
 }

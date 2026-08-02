@@ -166,6 +166,20 @@ class EndToEndTest extends \DokuWikiTest
     }
 
     /**
+     * Skipped heading levels are numbered as deep as they are nested in the outline
+     */
+    public function testNumberingOfSkippedLevels(): void
+    {
+        $html = $this->getDebugHTML('skiplevels', ['headernumber' => 1]);
+
+        $this->assertSame(
+            ['1. Top', '1.1. Deep A', '1.2. Less Deep', '1.2.1. Deep B'],
+            $this->headingTexts($html)
+        );
+        $this->assertSame([0, 1, 1, 2], $this->bookmarkLevels($html));
+    }
+
+    /**
      * A page may contain more than one top level heading
      */
     public function testNumberingWithMultipleTopLevelHeaders(): void
