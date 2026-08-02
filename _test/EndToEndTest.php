@@ -216,13 +216,14 @@ class EndToEndTest extends \DokuWikiTest
     }
 
     /**
-     * An export starting below the top level has no chapter to count yet
+     * An export starting below the top level counts that level as its top one
      */
     public function testNumberingWhenFirstPageHasNoTopLevelHeader(): void
     {
         $html = $this->getDebugHTML(['numbering_h2_only', 'numbering_h1'], ['headernumber' => 1]);
 
-        $this->assertSame(['0.1. Orphan', '1. Two'], $this->headingTexts($html));
+        $this->assertSame(['1. Orphan', '2. Two'], $this->headingTexts($html));
+        $this->assertSame([0, 0], $this->bookmarkLevels($html));
     }
 
     /**

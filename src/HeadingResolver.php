@@ -121,7 +121,7 @@ class HeadingResolver
 
         $prefix = '';
         for ($i = 1; $i <= $depth; $i++) {
-            $prefix .= ($this->headerCount[$i] ?? 0) . '.';
+            $prefix .= $this->headerCount[$i] . '.';
         }
 
         $this->previousDepth = $depth;

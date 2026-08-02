@@ -42,14 +42,14 @@ class DepthNormalizerTest extends DokuWikiTest {
     }
 
     /**
-     * A document that starts below the top level keeps that level as its baseline
+     * A document that starts below the top level is lifted up to it
      */
-    public function testFirstHeadingDefinesTheBaseline() {
+    public function testFirstHeadingIsTheTopDepth() {
         $normalizer = new DepthNormalizer();
 
-        $this->assertSame(2, $normalizer->normalize(2));
-        $this->assertSame(3, $normalizer->normalize(3));
-        $this->assertSame(1, $normalizer->normalize(1));
+        $this->assertSame(1, $normalizer->normalize(3));
+        $this->assertSame(2, $normalizer->normalize(4));
+        $this->assertSame(1, $normalizer->normalize(3));
     }
 
     /**
