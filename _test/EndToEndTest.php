@@ -227,6 +227,46 @@ class EndToEndTest extends \DokuWikiTest
     }
 
     /**
+     * Each page contributes its own footnotes exactly once, whether cached or not
+     */
+    public function testFootnotesAreNotRepeatedAcrossPages(): void
+    {
+        $pages = ['footnote_a', 'footnote_b'];
+        foreach ($pages as $page) {
+            $this->prepareFixturePage($page);
+        }
+
+        $this->purgeRenderCache($pages);
+        $cold = $this->exportDebugHTML($pages);
+
+        $this->warmRenderCache($pages);
+        $warm = $this->exportDebugHTML($pages);
+
+        $this->purgeRenderCache($pages);
+
+        foreach (['cold' => $cold, 'warm' => $warm] as $state => $html) {
+            $this->assertSame(1, substr_count($html, 'Footnote from page one'), $state . ' footnote one');
+            $this->assertSame(1, substr_count($html, 'Footnote from page two'), $state . ' footnote two');
+        }
+    }
+
+    /**
+     * Code block download links have to point at an offset that exists on their own page
+     */
+    public function testCodeBlockOffsetsRestartPerPage(): void
+    {
+        $html = $this->getDebugHTML(['codeblock_a', 'codeblock_b']);
+
+        $offsets = [];
+        foreach ((new Document())->html($html)->find('dl.file a') as $link) {
+            parse_str((string)parse_url(html_entity_decode($link->attr('href')), PHP_URL_QUERY), $query);
+            $offsets[] = $query['codeblock'] ?? null;
+        }
+
+        $this->assertSame(['0', '0'], $offsets);
+    }
+
+    /**
      * Ensure each rendered page begins with an anchor that namespaces intra-page links.
      */
     public function testDocumentStartCreatesPageAnchors(): void

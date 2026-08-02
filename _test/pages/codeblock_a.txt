@@ -1,0 +1,5 @@
+====== Code Page A ======
+
+<file txt a.txt>
+content a
+</file>

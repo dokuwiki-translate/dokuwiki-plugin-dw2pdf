@@ -14,16 +14,6 @@ use dokuwiki\plugin\dw2pdf\src\HeadingResolver;
 class renderer_plugin_dw2pdf extends Doku_Renderer_xhtml
 {
     /**
-     * The object will be reused for all pages of one export.
-     *
-     * @inheritdoc
-     */
-    public function isSingleton()
-    {
-        return true;
-    }
-
-    /**
      * Emit an anchor the writer can rewrite intra-PDF links to
      *
      * @inheritdoc
