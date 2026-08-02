@@ -21,6 +21,9 @@ class Writer
     /** @var Styles The style parser */
     protected Styles $styles;
 
+    /** @var HeadingResolver Resolves the heading markers emitted by the renderer */
+    protected HeadingResolver $headings;
+
     /** @var bool Signal to output a page break before the next output */
     protected bool $breakBeforeNext = false;
 
@@ -45,13 +48,7 @@ class Writer
         $this->template = $template;
         $this->styles = $styles;
         $this->debug = $config->isDebugEnabled();
-
-        /**
-         * initialize a new renderer instance (singleton instance will be reused in later p_* calls)
-         * @var \renderer_plugin_dw2pdf $renderer
-         */
-        $renderer = plugin_load('renderer', 'dw2pdf', true);
-        $renderer->setConfig($config);
+        $this->headings = new HeadingResolver($config);
     }
 
     /**
@@ -142,7 +139,8 @@ class Writer
         //restore ID (just in case)
         $ID = $keep;
 
-        // Fix internal links then write the page
+        // Resolve headings, fix internal links then write the page
+        $html = $this->headings->resolvePage($html);
         $html = $this->fixInternalLinks($collector, $html);
         $this->wikiPage($html);
     }

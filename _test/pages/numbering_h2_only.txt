@@ -1,0 +1,3 @@
+===== Orphan =====
+
+Text without a top level heading.
