@@ -132,7 +132,20 @@ class ConfigTest extends DokuWikiTest
      */
     public function testDefaultTocLevels()
     {
-        $config = new Config(['toc' => 1]);
+        $config = new Config(['toc' => 1, 'toclevels' => '']);
+        $mpdfConfig = $config->getMPdfConfig();
+        $this->assertSame(['H1' => 0, 'H2' => 1, 'H3' => 2], $mpdfConfig['h2toc'], 'from toclevels');
+    }
+
+    /**
+     * Toc levels should reset to default when request parameter is set to empty string
+     */
+    public function testDefaultTocLevelsFromInput()
+    {
+        global $INPUT;
+        $INPUT->set('toclevels', '');
+
+        $config = new Config(['toc' => 1, 'toclevels' => '2-4']);
         $mpdfConfig = $config->getMPdfConfig();
         $this->assertSame(['H1' => 0, 'H2' => 1, 'H3' => 2], $mpdfConfig['h2toc'], 'from toclevels');
     }

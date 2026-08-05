@@ -71,7 +71,7 @@ class Config
         io_mkdir_p($this->tempDir);
 
         // set default ToC levels from main config
-        $this->tocLevels = $this->parseTocLevels($conf['toptoclevel'] . '-' . $conf['maxtoclevel']);
+        $this->tocLevels = $this->parseTocLevels('');
 
         $this->loadPluginConfig($pluginConf);
         $this->loadInputConfig();
@@ -279,11 +279,19 @@ class Config
     /**
      * Parses the ToC levels configuration into an array
      *
+     * When no levels are given, the levels configured for the wiki's own ToC are used.
+     *
      * @param string $toclevels eg. "2-4"
      * @return array
      */
     protected function parseTocLevels(string $toclevels): array
     {
+        global $conf;
+
+        if (trim($toclevels) === '') {
+            $toclevels = $conf['toptoclevel'] . '-' . $conf['maxtoclevel'];
+        }
+
         $levels = [];
         [$top, $max] = sexplode('-', $toclevels, 2);
         $top = max(1, min(5, (int)$top));
