@@ -1,0 +1,3 @@
+====== Footnote Page B ======
+
+Some text((Footnote from page two)) here.

@@ -49,6 +49,7 @@ class ConfigTest extends DokuWikiTest
         $this->assertFalse($config->hasSavedSelection(), 'default savedselection flag');
         $this->assertNull($config->getSavedSelection(), 'default savedselection');
         $this->assertSame('', $config->getExportId(), 'default exportid');
+        $this->assertTrue($config->useCache(), 'default usecache');
 
         $this->assertSame('A4', $mpdfConfig['format'], 'default pagesize/orientation');
         $this->assertSame(11, $mpdfConfig['default_font_size'], 'default font-size');

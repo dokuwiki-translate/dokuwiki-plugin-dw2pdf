@@ -33,7 +33,7 @@ class Config
     #[FromConfig('debug'), FromInput('debug')]
     protected bool $isDebug = false;
     #[FromConfig]
-    protected bool $usecache;
+    protected bool $usecache = true;
     #[FromConfig]
     protected array $useStyles = [];
     #[FromConfig]

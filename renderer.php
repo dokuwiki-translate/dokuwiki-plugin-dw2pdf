@@ -2,8 +2,7 @@
 
 // phpcs:disable: PSR1.Methods.CamelCapsMethodName.NotCamelCaps
 // phpcs:disable: PSR2.Methods.MethodDeclaration.Underscore
-use dokuwiki\plugin\dw2pdf\src\AbstractCollector;
-use dokuwiki\plugin\dw2pdf\src\Config;
+use dokuwiki\plugin\dw2pdf\src\HeadingResolver;
 
 /**
  * DokuWiki Plugin dw2pdf (Renderer Component)
@@ -14,42 +13,14 @@ use dokuwiki\plugin\dw2pdf\src\Config;
  */
 class renderer_plugin_dw2pdf extends Doku_Renderer_xhtml
 {
-    private $lastHeaderLevel = -1;
-    private $originalHeaderLevel = 0;
-    private $difference = 0;
-    private $header_count = [];
-    private $previous_level = 0;
-    private int $chapter = 0;
-    private ?Config $config = null;
-
     /**
-     * The Writer will reinitialize the renderer for each export, but the object will be reused within one export.
+     * Emit an anchor the writer can rewrite intra-PDF links to
      *
      * @inheritdoc
      */
-    public function isSingleton()
-    {
-        return true;
-    }
-
-    /**
-     * Set the active configuration
-     *
-     * @param Config $config
-     * @return void
-     */
-    public function setConfig(Config $config): void
-    {
-        $this->config = $config;
-    }
-
     public function document_start()
     {
         global $ID;
-
-        if (!$this->config instanceof Config) {
-            throw new RuntimeException('DW2PDF Renderer configuration not set');
-        }
 
         parent::document_start();
 
@@ -59,10 +30,6 @@ class renderer_plugin_dw2pdf extends Doku_Renderer_xhtml
 
         $this->doc .= "<a name=\"{$pid}__\">";
         $this->doc .= "</a>";
-
-
-        $this->header_count[1] = $this->chapter;
-        $this->chapter++;
     }
 
     /**
@@ -80,11 +47,16 @@ class renderer_plugin_dw2pdf extends Doku_Renderer_xhtml
     }
 
     /**
-     * Simplified header printing with PDF bookmarks
+     * Simplified header printing
+     *
+     * Numbering and PDF bookmark are not known while a single page is rendered, so a marker
+     * is emitted instead. It is resolved by the writer once the page's position within the
+     * export is known.
      *
      * @param string $text
      * @param int $level from 1 (highest) to 6 (lowest)
      * @param int $pos
+     * @see HeadingResolver
      */
     public function header($text, $level, $pos, $returnonly = false)
     {
@@ -103,82 +75,13 @@ class renderer_plugin_dw2pdf extends Doku_Renderer_xhtml
         $pid = sectionID($ID, $check);
         $hid = $pid . '__' . $hid;
 
-
-        // retrieve numbered headings option
-        $isnumberedheadings = $this->config->useNumberedHeaders();
-
-        $header_prefix = '';
-        if ($isnumberedheadings) {
-            if ($level > 0) {
-                if ($this->previous_level > $level) {
-                    for ($i = $level + 1; $i <= $this->previous_level; $i++) {
-                        $this->header_count[$i] = 0;
-                    }
-                }
-            }
-            $this->header_count[$level] = ($this->header_count[$level] ?? 0) + 1;
-
-            // $header_prefix = "";
-            for ($i = 1; $i <= $level; $i++) {
-                $header_prefix .= $this->header_count[$i] . ".";
-            }
-        }
-        if ($header_prefix !== '') {
-            $header_prefix .= ' ';
-        }
-
-        // add PDF bookmark
-        $bookmark = '';
-        $maxbookmarklevel = $this->config->getMaxBookmarks();
-        // 0: off, 1-6: show down to this level
-        if ($maxbookmarklevel && $maxbookmarklevel >= $level) {
-            $bookmarklevel = $this->calculateBookmarklevel($level);
-            $bookmark = sprintf(
-                '<bookmark content="%s %s" level="%d" />',
-                $header_prefix,
-                $this->_xmlEntities($text),
-                $bookmarklevel
-            );
-        }
-
         // print header
-        $this->doc .= DOKU_LF . "<h$level>$bookmark";
-        $this->doc .= $header_prefix . "<a name=\"$hid\">";
+        $this->doc .= DOKU_LF . "<h$level>";
+        $this->doc .= HeadingResolver::marker($text, $level);
+        $this->doc .= "<a name=\"$hid\">";
         $this->doc .= $this->_xmlEntities($text);
         $this->doc .= "</a>";
         $this->doc .= "</h$level>" . DOKU_LF;
-        $this->previous_level = $level;
-    }
-
-    /**
-     * Bookmark levels might increase maximal +1 per level.
-     * (note: levels start at 1, bookmarklevels at 0)
-     *
-     * @param int $level 1 (highest) to 6 (lowest)
-     * @return int
-     */
-    protected function calculateBookmarklevel($level)
-    {
-        if ($this->lastHeaderLevel == -1) {
-            $this->lastHeaderLevel = $level;
-        }
-        $step = $level - $this->lastHeaderLevel;
-        if ($step > 1) {
-            $this->difference += $step - 1;
-        }
-        if ($step < 0) {
-            $this->difference = min($this->difference, $level - $this->originalHeaderLevel);
-            $this->difference = max($this->difference, 0);
-        }
-
-        $bookmarklevel = $level - $this->difference;
-
-        if ($step > 1) {
-            $this->originalHeaderLevel = $bookmarklevel;
-        }
-
-        $this->lastHeaderLevel = $level;
-        return $bookmarklevel - 1; //zero indexed
     }
 
     /**

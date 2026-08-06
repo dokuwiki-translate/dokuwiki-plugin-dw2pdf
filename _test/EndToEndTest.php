@@ -2,6 +2,7 @@
 
 namespace dokuwiki\plugin\dw2pdf\test;
 
+use dokuwiki\Cache\CacheRenderer;
 use dokuwiki\plugin\dw2pdf\src\BookCreatorLiveSelectionCollector;
 use dokuwiki\plugin\dw2pdf\src\Cache;
 use dokuwiki\plugin\dw2pdf\src\Config;
@@ -41,6 +42,18 @@ class EndToEndTest extends \DokuWikiTest
             $this->prepareFixturePage($page);
         }
 
+        return $this->exportDebugHTML($pages, $conf);
+    }
+
+    /**
+     * Render an export of already existing pages through the PdfExportService in debug mode.
+     *
+     * @param string[] $pages The pages to be included in the export
+     * @param array $conf Plugin configuration overrides
+     * @return string Rendered HTML output
+     */
+    protected function exportDebugHTML(array $pages, array $conf = []): string
+    {
         $config = new Config(array_merge(
             $conf,
             [
@@ -91,6 +104,166 @@ class EndToEndTest extends \DokuWikiTest
         $dom->find('h1')->each(function ($h) use (&$count) {
             $this->assertMatchesRegularExpression('/^' . ($count++) . '\. /', $h->text());
         });
+    }
+
+    /**
+     * The state of the per-page render cache must not influence numbering and bookmark levels
+     */
+    public function testHeadingsDoNotDependOnRenderCache(): void
+    {
+        $pages = ['headers', 'simple'];
+        $conf = ['headernumber' => 1];
+        foreach ($pages as $page) {
+            $this->prepareFixturePage($page);
+        }
+
+        $this->purgeRenderCache($pages);
+        $cold = $this->exportDebugHTML($pages, $conf);
+
+        $this->warmRenderCache($pages);
+        $warm = $this->exportDebugHTML($pages, $conf);
+
+        // only the second page renders fresh now
+        $this->purgeRenderCache(['simple']);
+        $mixed = $this->exportDebugHTML($pages, $conf);
+
+        $this->purgeRenderCache($pages);
+
+        $this->assertSame($this->headingTexts($cold), $this->headingTexts($warm), 'warm cache');
+        $this->assertSame($this->headingTexts($cold), $this->headingTexts($mixed), 'partially warm cache');
+        $this->assertSame($this->bookmarkLevels($cold), $this->bookmarkLevels($warm), 'warm cache bookmarks');
+        $this->assertSame($this->bookmarkLevels($cold), $this->bookmarkLevels($mixed), 'mixed cache bookmarks');
+    }
+
+    /**
+     * Exporting a single page out of a previously exported set must start numbering at 1
+     */
+    public function testSubsetExportStartsAtChapterOne(): void
+    {
+        $conf = ['headernumber' => 1];
+        foreach (['headers', 'simple'] as $page) {
+            $this->prepareFixturePage($page);
+        }
+
+        $this->purgeRenderCache(['headers', 'simple']);
+        $this->exportDebugHTML(['headers', 'simple'], $conf);
+        $this->warmRenderCache(['simple']);
+
+        $html = $this->exportDebugHTML(['simple'], $conf);
+        $this->purgeRenderCache(['headers', 'simple']);
+
+        $this->assertSame(['1. A Simple Page'], $this->headingTexts($html));
+    }
+
+    /**
+     * Bookmark levels may never increase by more than one, even for skipped heading levels
+     */
+    public function testBookmarkLevelsAreClamped(): void
+    {
+        $html = $this->getDebugHTML('skiplevels');
+
+        $this->assertSame([0, 1, 1, 2], $this->bookmarkLevels($html));
+    }
+
+    /**
+     * Skipped heading levels are numbered as deep as they are nested in the outline
+     */
+    public function testNumberingOfSkippedLevels(): void
+    {
+        $html = $this->getDebugHTML('skiplevels', ['headernumber' => 1]);
+
+        $this->assertSame(
+            ['1. Top', '1.1. Deep A', '1.2. Less Deep', '1.2.1. Deep B'],
+            $this->headingTexts($html)
+        );
+        $this->assertSame([0, 1, 1, 2], $this->bookmarkLevels($html));
+    }
+
+    /**
+     * A page may contain more than one top level heading
+     */
+    public function testNumberingWithMultipleTopLevelHeaders(): void
+    {
+        $html = $this->getDebugHTML(['numbering_two_h1', 'numbering_h1'], ['headernumber' => 1]);
+
+        $this->assertSame(['1. First', '2. Second', '3. Two'], $this->headingTexts($html));
+    }
+
+    /**
+     * A page without a top level heading continues the chapter of the page before it
+     */
+    public function testNumberingWithPageWithoutTopLevelHeader(): void
+    {
+        $html = $this->getDebugHTML(
+            ['numbering_h1_sub', 'numbering_h2_only', 'numbering_h1'],
+            ['headernumber' => 1]
+        );
+
+        $this->assertSame(['1. One', '1.1. Sub', '1.2. Orphan', '2. Two'], $this->headingTexts($html));
+    }
+
+    /**
+     * A page without any heading must not consume a chapter number
+     */
+    public function testNumberingWithPageWithoutHeaders(): void
+    {
+        $html = $this->getDebugHTML(
+            ['numbering_h1_sub', 'numbering_nohead', 'numbering_h1'],
+            ['headernumber' => 1]
+        );
+
+        $this->assertSame(['1. One', '1.1. Sub', '2. Two'], $this->headingTexts($html));
+    }
+
+    /**
+     * An export starting below the top level counts that level as its top one
+     */
+    public function testNumberingWhenFirstPageHasNoTopLevelHeader(): void
+    {
+        $html = $this->getDebugHTML(['numbering_h2_only', 'numbering_h1'], ['headernumber' => 1]);
+
+        $this->assertSame(['1. Orphan', '2. Two'], $this->headingTexts($html));
+        $this->assertSame([0, 0], $this->bookmarkLevels($html));
+    }
+
+    /**
+     * Each page contributes its own footnotes exactly once, whether cached or not
+     */
+    public function testFootnotesAreNotRepeatedAcrossPages(): void
+    {
+        $pages = ['footnote_a', 'footnote_b'];
+        foreach ($pages as $page) {
+            $this->prepareFixturePage($page);
+        }
+
+        $this->purgeRenderCache($pages);
+        $cold = $this->exportDebugHTML($pages);
+
+        $this->warmRenderCache($pages);
+        $warm = $this->exportDebugHTML($pages);
+
+        $this->purgeRenderCache($pages);
+
+        foreach (['cold' => $cold, 'warm' => $warm] as $state => $html) {
+            $this->assertSame(1, substr_count($html, 'Footnote from page one'), $state . ' footnote one');
+            $this->assertSame(1, substr_count($html, 'Footnote from page two'), $state . ' footnote two');
+        }
+    }
+
+    /**
+     * Code block download links have to point at an offset that exists on their own page
+     */
+    public function testCodeBlockOffsetsRestartPerPage(): void
+    {
+        $html = $this->getDebugHTML(['codeblock_a', 'codeblock_b']);
+
+        $offsets = [];
+        foreach ((new Document())->html($html)->find('dl.file a') as $link) {
+            parse_str((string)parse_url(html_entity_decode($link->attr('href')), PHP_URL_QUERY), $query);
+            $offsets[] = $query['codeblock'] ?? null;
+        }
+
+        $this->assertSame(['0', '0'], $offsets);
     }
 
     /**
@@ -157,7 +330,7 @@ class EndToEndTest extends \DokuWikiTest
      */
     public function testInternalLinksExposeDw2pdfMetadata(): void
     {
-        $html = $this->getRawRendererHtml('renderer_features', [], ['target']);
+        $html = $this->getRawRendererHtml('renderer_features', ['target']);
         $dom = (new Document())->html($html);
 
         $pageLink = $this->findLinkByText($dom, 'Target page link');
@@ -231,20 +404,15 @@ class EndToEndTest extends \DokuWikiTest
      * Render a single page through the dw2pdf renderer without writer post-processing.
      *
      * @param string $pageId
-     * @param array $conf
      * @param string[] $additionalPages
      * @return string
      */
-    protected function getRawRendererHtml(string $pageId, array $conf = [], array $additionalPages = []): string
+    protected function getRawRendererHtml(string $pageId, array $additionalPages = []): string
     {
         $this->prepareFixturePage($pageId);
         foreach ($additionalPages as $related) {
             $this->prepareFixturePage($related);
         }
-
-        /** @var \renderer_plugin_dw2pdf $renderer */
-        $renderer = plugin_load('renderer', 'dw2pdf', true);
-        $renderer->setConfig(new Config($conf));
 
         global $ID;
         $keep = $ID;
@@ -270,6 +438,79 @@ class EndToEndTest extends \DokuWikiTest
     {
         $data = file_get_contents(__DIR__ . '/pages/' . $pageId . '.txt');
         saveWikiText($pageId, $data, 'dw2pdf renderer test');
+    }
+
+    /**
+     * The per-page render cache DokuWiki keeps for dw2pdf output.
+     *
+     * @param string $pageId
+     * @return CacheRenderer
+     */
+    protected function renderCache(string $pageId): CacheRenderer
+    {
+        return new CacheRenderer($pageId, wikiFN($pageId), 'dw2pdf');
+    }
+
+    /**
+     * Drop the render cache of the given pages, so the next export renders them fresh.
+     *
+     * @param string[] $pages
+     * @return void
+     */
+    protected function purgeRenderCache(array $pages): void
+    {
+        foreach ($pages as $page) {
+            $this->renderCache($page)->removeCache();
+        }
+    }
+
+    /**
+     * Date the render cache of the given pages forward, so the next export is a guaranteed hit.
+     *
+     * The pages need to have been exported before, otherwise there is no cache to date forward.
+     *
+     * @param string[] $pages
+     * @return void
+     */
+    protected function warmRenderCache(array $pages): void
+    {
+        foreach ($pages as $page) {
+            $cache = $this->renderCache($page);
+            $this->assertFileExists($cache->cache, 'no render cache written for ' . $page);
+            touch($cache->cache, time() + 60);
+            clearstatcache(true, $cache->cache);
+            $this->assertTrue($cache->useCache(), 'render cache for ' . $page . ' is not warm');
+        }
+    }
+
+    /**
+     * Collect the text of all headings in document order.
+     *
+     * @param string $html
+     * @return string[]
+     */
+    protected function headingTexts(string $html): array
+    {
+        $texts = [];
+        foreach ((new Document())->html($html)->find('h1, h2, h3, h4, h5, h6') as $heading) {
+            $texts[] = trim($heading->text());
+        }
+        return $texts;
+    }
+
+    /**
+     * Collect the level of all bookmarks in document order.
+     *
+     * @param string $html
+     * @return int[]
+     */
+    protected function bookmarkLevels(string $html): array
+    {
+        $levels = [];
+        foreach ((new Document())->html($html)->find('bookmark') as $bookmark) {
+            $levels[] = (int)$bookmark->attr('level');
+        }
+        return $levels;
     }
 
     /**
