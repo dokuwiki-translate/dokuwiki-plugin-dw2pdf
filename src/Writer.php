@@ -33,9 +33,6 @@ class Writer
     /** @var string Store HTML when debugging */
     protected string $debugHTML = '';
 
-    /** @var false Is this the first page being written? */
-    protected bool $isFirstPage = true;
-
     /**
      * @param DokuMpdf $mpdf
      * @param Template $template
@@ -68,6 +65,8 @@ class Writer
         $styles .= '@page portrait-page { size:portrait }';
         $styles .= 'div.dw2pdf-portrait { page:portrait-page }';
         $styles .= $this->styles->getCSS();
+        $styles .= $this->defineHeaderFooters();
+
         $this->write($styles, HTMLParserMode::HEADER_CSS);
 
         //start body html
@@ -94,8 +93,10 @@ class Writer
      */
     public function wikiPage(string $html): void
     {
-        $this->conditionalPageBreak();
+        // Redefine the odd/even headers/footers for this page *before* the break: mPDF captures a
+        // page's header and footer when the page begins.
         $this->applyHeaderFooters();
+        $this->conditionalPageBreak();
         $this->write($html, HTMLParserMode::HTML_BODY, false, false);
 
         // add citation box if any
@@ -268,24 +269,31 @@ class Writer
         $html = $this->template->getHTML('cover');
         if (!$html) return;
 
-        $this->conditionalPageBreak();
         $this->applyHeaderFooters();
+        $this->conditionalPageBreak();
         $this->write($html, HTMLParserMode::HTML_BODY, false, false);
 
         $this->breakAfterMe();
     }
 
     /**
-     * Insert a back page
+     * Insert a back page and settle the export-wide header/footer context
      *
-     * Should be called once at the end of the PDF generation. Will do nothing if
-     * no back page is configured.
+     * Should be called once at the end of the PDF generation. Even when no back page is
+     * configured it restores the export context, so the table of contents (which mPDF renders
+     * at output time) does not inherit the last rendered wiki page's placeholders.
      *
      * @return void
      * @throws MpdfException
      */
     public function back(): void
     {
+        // The back page - and the table of contents, which mPDF renders at output time after every
+        // page - belong to the export as a whole. Return to the export context and refresh the
+        // header/footer blocks so they do not carry the last rendered wiki page's placeholders.
+        $this->template->resetContext();
+        $this->applyHeaderFooters();
+
         $html = $this->template->getHTML('back');
         if (!$html) return;
 
@@ -306,51 +314,88 @@ class Writer
     }
 
     /**
-     * Set new headers and footers
+     * Define the named headers/footers and return the CSS that binds them to the pages
      *
-     * This will call the appropriate mpdf methods to set headers and footers. It should be called
-     * before each wiki page is added to the PDF.
+     * mPDF selects a page's header and footer through @page CSS rules that reference named blocks.
+     * The "first" block is bound to "@page :first" so mPDF places it on the first physical page
+     * only. The odd/even blocks are bound to "@page" and apply to every following page.
      *
-     * On first call on this instance it will set the headers/footers for the first page, afterwards
-     * it will use the standard headers/footers.
+     * The blocks defined here resolve their placeholders against the first page (the current
+     * context when startDocument() runs). The first-page block keeps that content, while the
+     * odd/even blocks are redefined per wiki page by applyHeaderFooters().
      *
-     * We always set even and odd headers/footers, though they may be identical.
+     * Templates that do not exist are skipped, so their pages simply carry no header/footer.
+     *
+     * @return string The @page CSS binding the defined blocks
+     * @throws MpdfException
+     */
+    protected function defineHeaderFooters(): string
+    {
+        $firstRules = '';
+        $pageRules = '';
+        foreach (['header', 'footer'] as $section) {
+            foreach (['first', 'odd', 'even'] as $order) {
+                if (!$this->defineNamedBlock($section, $order)) continue;
+
+                if ($order === 'first') {
+                    $firstRules .= $section . ': html_' . $section . '_first;';
+                } else {
+                    $pageRules .= $order . '-' . $section . '-name: html_' . $section . '_' . $order . ';';
+                }
+            }
+        }
+
+        $css = '';
+        if ($firstRules !== '') $css .= '@page :first { ' . $firstRules . ' }';
+        if ($pageRules !== '') $css .= '@page { ' . $pageRules . ' }';
+        return $css;
+    }
+
+    /**
+     * Redefine the odd/even headers and footers from the current template context
+     *
+     * Must run *before* the page break that starts a page, because mPDF captures a page's header
+     * and footer when the page begins. The blocks are re-read from the template on every call so
+     * per-page placeholders (@ID@, @PAGEURL@, @QRCODE@, ...) resolve against the current context.
+     *
+     * The first-page block is left untouched: "@page :first" consumes it on the first physical page
+     * only, so it never needs a per-page value.
+     *
      * @return void
+     * @throws MpdfException
      */
     protected function applyHeaderFooters(): void
     {
-        if ($this->isFirstPage) {
-            $header = $this->template->getHTML('header', 'first');
-            $footer = $this->template->getHTML('footer', 'first');
-
-            if ($header) {
-                $this->mpdf->SetHTMLHeader($header, 'O');
-                $this->mpdf->SetHTMLHeader($header, 'E');
-            }
-            if ($footer) {
-                $this->mpdf->SetHTMLFooter($footer, 'O');
-                $this->mpdf->SetHTMLFooter($footer, 'E');
-            }
-            $this->isFirstPage = false;
-        } else {
-            $headerOdd = $this->template->getHTML('header', 'odd');
-            $headerEven = $this->template->getHTML('header', 'even');
-            $footerOdd = $this->template->getHTML('footer', 'odd');
-            $footerEven = $this->template->getHTML('footer', 'even');
-
-            if ($headerOdd) {
-                $this->mpdf->SetHTMLHeader($headerOdd, 'O');
-            }
-            if ($headerEven) {
-                $this->mpdf->SetHTMLHeader($headerEven, 'E');
-            }
-            if ($footerOdd) {
-                $this->mpdf->SetHTMLFooter($footerOdd, 'O');
-            }
-            if ($footerEven) {
-                $this->mpdf->SetHTMLFooter($footerEven, 'E');
+        foreach (['header', 'footer'] as $section) {
+            foreach (['odd', 'even'] as $order) {
+                $this->defineNamedBlock($section, $order);
             }
         }
+    }
+
+    /**
+     * Define a single named header or footer block from its template
+     *
+     * The block is named "<section>_<order>" (e.g. "header_odd") and can be referenced in CSS as
+     * "html_<section>_<order>". Placeholders are resolved against the template's current context.
+     *
+     * @param string $section Either 'header' or 'footer'
+     * @param string $order The variant to load: 'first', 'odd' or 'even'
+     * @return bool True if the template existed and the block was defined, false otherwise
+     * @throws MpdfException
+     */
+    protected function defineNamedBlock(string $section, string $order): bool
+    {
+        $html = $this->template->getHTML($section, $order);
+        if ($html === '') return false;
+
+        $name = $section . '_' . $order;
+        if ($section === 'header') {
+            $this->mpdf->DefHTMLHeaderByName($name, $html);
+        } else {
+            $this->mpdf->DefHTMLFooterByName($name, $html);
+        }
+        return true;
     }
 
     /**
