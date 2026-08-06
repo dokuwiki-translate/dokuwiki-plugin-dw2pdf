@@ -127,7 +127,7 @@ class Template
             '@TPLBASE@' => DOKU_BASE . 'lib/plugins/dw2pdf/tpl/' . $this->name . '/',
             '@TPLINC@' => DOKU_INC . 'lib/plugins/dw2pdf/tpl/' . $this->name . '/',
             // page dependent placeholders
-            '@ID' => $this->context['id'] ?? '',
+            '@ID@' => $this->context['id'] ?? '',
             '@UPDATE@' => dformat(filemtime(wikiFN($this->context['id'], $this->context['rev'] ?? ''))),
             '@PAGEURL@' => $url,
             '@QRCODE@' => $this->generateQRCode($url),
