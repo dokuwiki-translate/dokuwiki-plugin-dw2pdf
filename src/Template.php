@@ -30,6 +30,9 @@ class Template
         'username' => '',
     ];
 
+    /** @var array|null The export-wide context, i.e. the first context set. Restored by resetContext() */
+    protected ?array $exportContext = null;
+
 
     /**
      * Constructor
@@ -66,6 +69,24 @@ class Template
             'at' => $collector->getAt() ?? '',
             'username' => $username ?? '',
         ];
+
+        // the first context set is the export as a whole, used for the structural pages
+        $this->exportContext ??= $this->context;
+    }
+
+    /**
+     * Restore the export-wide context
+     *
+     * Content pages set a per-page context; the cover, back page and table of contents belong to
+     * the export as a whole. This returns the context to the first page seeded via setContext().
+     *
+     * @return void
+     */
+    public function resetContext(): void
+    {
+        if ($this->exportContext !== null) {
+            $this->context = $this->exportContext;
+        }
     }
 
     /**

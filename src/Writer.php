@@ -279,16 +279,23 @@ class Writer
     }
 
     /**
-     * Insert a back page
+     * Insert a back page and settle the export-wide header/footer context
      *
-     * Should be called once at the end of the PDF generation. Will do nothing if
-     * no back page is configured.
+     * Should be called once at the end of the PDF generation. Even when no back page is
+     * configured it restores the export context, so the table of contents (which mPDF renders
+     * at output time) does not inherit the last rendered wiki page's placeholders.
      *
      * @return void
      * @throws MpdfException
      */
     public function back(): void
     {
+        // The back page - and the table of contents, which mPDF renders at output time after every
+        // page - belong to the export as a whole. Return to the export context and refresh the
+        // header/footer blocks so they do not carry the last rendered wiki page's placeholders.
+        $this->template->resetContext();
+        $this->applyHeaderFooters();
+
         $html = $this->template->getHTML('back');
         if (!$html) return;
 
@@ -347,11 +354,11 @@ class Writer
     }
 
     /**
-     * Redefine the odd/even headers and footers for the wiki page about to be written
+     * Redefine the odd/even headers and footers from the current template context
      *
-     * Must run *before* the page break that starts the page, because mPDF captures a page's header
+     * Must run *before* the page break that starts a page, because mPDF captures a page's header
      * and footer when the page begins. The blocks are re-read from the template on every call so
-     * per-page placeholders (@ID@, @PAGEURL@, @QRCODE@, ...) resolve against the current page.
+     * per-page placeholders (@ID@, @PAGEURL@, @QRCODE@, ...) resolve against the current context.
      *
      * The first-page block is left untouched: "@page :first" consumes it on the first physical page
      * only, so it never needs a per-page value.

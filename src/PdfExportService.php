@@ -165,7 +165,9 @@ class PdfExportService
 
         // Set the initial context (first page) before the document is started, so the headers and
         // footers defined in startDocument() resolve their placeholders against the first page.
-        $template->setContext($this->collector, $pages[0], null);
+        // This also becomes the export-wide context that structural pages (cover, back page and
+        // table of contents) fall back to, see Template::resetContext().
+        $template->setContext($this->collector, $pages[0], $this->remoteUser);
         $writer->startDocument($this->collector->getTitle());
         $writer->cover();
 
